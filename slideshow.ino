@@ -13,8 +13,8 @@
 #include <SPI.h>
 #include <SD.h>
 #include <JPEGDEC.h>
-#include "logo.h"
 
+#define VOLTAGE_THRESHOLD   3.0
 #define BATT_PIN            36
 #define SD_MISO             12
 #define SD_MOSI             13
@@ -81,9 +81,8 @@ int JPEGDraw(JPEGDRAW *pDraw) {
   return 1;
 }
 
-int drawFile(const char *name)
+int drawFile(const char *name, uint8_t *framebuffer)
 {
-  volatile uint32_t t1 = millis();
   int res = jpeg.open((const char *)name, myOpen, myClose, myRead, mySeek, JPEGDraw);
   if (res == 0) {
     Serial.print("Failed to open file: ");
@@ -94,22 +93,13 @@ int drawFile(const char *name)
   jpeg.decodeDither(ditherbuffer, 0);
   jpeg.close();
 
-  epd_clear();
-  epd_draw_grayscale_image(epd_full_screen(), framebuffer);
-
-  // Draw again for deeper blacks
-  delay(700);
-  epd_draw_grayscale_image(epd_full_screen(), framebuffer);
-  delay(700);
-  epd_draw_grayscale_image(epd_full_screen(), framebuffer);
-
-  volatile uint32_t t2 = millis();
-  Serial.printf("EPD draw took %dms.\n", t2 - t1);
   return 1;
 }
 
 void setup()
 {
+  volatile uint32_t t1 = millis();
+
   char buf[128];
 
   Serial.begin(115200);
@@ -136,11 +126,18 @@ void setup()
     vref = adc_chars.vref;
   }
 
+  // When reading the battery voltage, POWER_EN must be turned on
+  epd_poweron();
+
+  uint16_t v = analogRead(BATT_PIN);
+  float battery_voltage = ((float)v / 4095.0) * 2.0 * 3.3 * (vref / 1000.0);
+  String voltage = "➸ Voltage :" + String(battery_voltage) + "V";
+  Serial.println(voltage);
+
   epd_init();
 
   // Init frame buffers
   framebuffer = (uint8_t *)heap_caps_malloc(EPD_WIDTH * EPD_HEIGHT / 2, MALLOC_CAP_SPIRAM);
-  //  framebuffer = (uint8_t *)ps_calloc(sizeof(uint8_t), EPD_WIDTH * EPD_HEIGHT / 2);
   if (!framebuffer) {
     Serial.println("alloc memory failed !!!");
     while (1);
@@ -156,52 +153,66 @@ void setup()
   char fileName[18];
   sprintf(fileName, "/frames/%06d.jpg", bootCount);
 
-  epd_poweron();
-
   File entry = SD.open(fileName);
 
-  int drawRes = drawFile(fileName);
+  int drawRes = drawFile(fileName, framebuffer);
   if (drawRes == 0) {
     Serial.println("Reseting boot counter");
     bootCount = 0;
   } else {
-    
+    if (battery_voltage < VOLTAGE_THRESHOLD) {
+      epd_fill_rect(15, 10, 10, 5, 0xff, framebuffer);
+      epd_draw_rect(15, 10, 10, 5, 0x00, framebuffer);
+      epd_fill_rect(10, 15, 20, 30, 0xff, framebuffer);
+      epd_draw_rect(10, 15, 20, 30, 0x00, framebuffer);
+    }
+
+    epd_clear();
+    epd_draw_grayscale_image(epd_full_screen(), framebuffer);
+    // Draw again for deeper blacks
+    delay(700);
+    epd_draw_grayscale_image(epd_full_screen(), framebuffer);
+    delay(700);
+    epd_draw_grayscale_image(epd_full_screen(), framebuffer);
   }
 
-  epd_draw_rect(0, 0, 10, 20, 0x00, framebuffer);
+
 
   // === log
-//  Rect_t logArea = {
-//    .x = 100,
-//    .y = 460,
-//    .width = 760,
-//    .height = 50,
-//  };
-//
-//  int cursor_x = 200;
-//  int cursor_y = 500;
-//  
-//  epd_clear_area(logArea);
-//  writeln((GFXfont *)&FiraSans, fileName, &cursor_x, &cursor_y, NULL);
-//  
-//  cursor_x += 40;
-//  sprintf(fileName, "%d", jpeg.getLastError());
-//  
-//  writeln((GFXfont *)&FiraSans, fileName, &cursor_x, &cursor_y, NULL);
+  //  Rect_t logArea = {
+  //    .x = 100,
+  //    .y = 460,
+  //    .width = 760,
+  //    .height = 50,
+  //  };
+  //
+  //  int cursor_x = 200;
+  //  int cursor_y = 500;
+  //
+  //  epd_clear_area(logArea);
+  //  writeln((GFXfont *)&FiraSans, fileName, &cursor_x, &cursor_y, NULL);
+  //
+  //  cursor_x += 40;
+  //  sprintf(fileName, "%d", jpeg.getLastError());
+  //
+  //  writeln((GFXfont *)&FiraSans, fileName, &cursor_x, &cursor_y, NULL);
   // === log end
 
 
   // There are two ways to close
 
   // It will turn off the power of the ink screen, but cannot turn off the blue LED light.
-//   epd_poweroff();
+  //   epd_poweroff();
 
   //It will turn off the power of the entire
   // POWER_EN control and also turn off the blue LED light
   epd_poweroff_all();
 
   delay(1000);
-  
+
+  volatile uint32_t t2 = millis();
+  Serial.printf("Was awake for %dms.\n", t2 - t1);
+
   esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
   Serial.println("Setup ESP32 to sleep for every " + String(TIME_TO_SLEEP) +
                  " Seconds");
@@ -213,70 +224,4 @@ void setup()
 void loop()
 {
   return;
-  // When reading the battery voltage, POWER_EN must be turned on
-  epd_poweron();
-
-  uint16_t v = analogRead(BATT_PIN);
-  float battery_voltage = ((float)v / 4095.0) * 2.0 * 3.3 * (vref / 1000.0);
-  String voltage = "➸ Voltage :" + String(battery_voltage) + "V";
-  Serial.println(voltage);
-
-  //  Rect_t area = {
-  //    .x = 200,
-  //    .y = 460,
-  //    .width = 320,
-  //    .height = 50,
-  //  };
-  //
-  //  int cursor_x = 200;
-  //  int cursor_y = 500;
-  //  epd_clear_area(area);
-  //  writeln((GFXfont *)&FiraSans, (char *)voltage.c_str(), &cursor_x, &cursor_y, NULL);
-
-
-  // New code
-  int filecount = 0;
-  File dir = SD.open("/");
-  while (true) {
-    File entry = dir.openNextFile();
-    if (!entry) break;
-    if (entry.isDirectory() == false) {
-      const char *name = entry.name();
-      const int len = strlen(name);
-      if (len > 3 && strcasecmp(name + len - 3, "jpg") == 0) {
-        Serial.print("File: ");
-        Serial.println(name);
-
-        drawFile(name);
-
-        filecount = filecount + 1;
-
-        delay(5000);
-        //if (digitalRead(34) == LOW) {
-        //  // skip delay between images when pushbutton is pressed
-        //  delay(1000);
-        //}
-      }
-    }
-    entry.close();
-  }
-  if (filecount == 0) {
-    Serial.println("No .JPG files found");
-    //tft.println("No .JPG files found");
-    delay(2000);
-  }
-
-
-
-
-  // There are two ways to close
-
-
-  // It will turn off the power of the ink screen, but cannot turn off the blue LED light.
-  // epd_poweroff();
-
-  //It will turn off the power of the entire
-  // POWER_EN control and also turn off the blue LED light
-  epd_poweroff_all();
-  delay(5000);
 }

@@ -1,6 +1,11 @@
 mkdir frames
+
+# Using colorlevels filter
 ffmpeg -ss 05:20 -i I.Am.Cuba.1964.720p.BluRay.x264.AAC-[YTS.MX].mp4 -vf "scale=960:720,crop=960:540,colorlevels=rimin=0.068:gimin=0.068:bimin=0.068:rimax=0.902:gimax=0.902:bimax=0.902" -r 1 -qscale:v 2 frames/%06d.jpg
+# Using eq filter
 ffmpeg -ss 05:20 -i I.Am.Cuba.1964.720p.BluRay.x264.AAC-[YTS.MX].mp4 -vf "scale=960:720,crop=960:540,eq=gamma=1.3:contrast=1.2" -r 1 -qscale:v 2 frames/%06d.jpg
-ffmpeg -ss 05:20 -i I.Am.Cuba.1964.720p.BluRay.x264.AAC-[YTS.MX].mp4 -vf "scale=960:720,crop=960:540,curves=all='0/0 0.05/0.03 0.22/0.35 0.5/0.7 1/1'" -r 1 -qscale:v 2 frames/%06d.jpg
+# Using curves filter
+ffmpeg -ss 05:20 -i I.Am.Cuba.1964.720p.BluRay.x264.AAC-[YTS.MX].mp4 -vf "scale=960:720,crop=960:540,curves=all='0/0 0.023/0.078 0.375/0.6 0.726/0.83 1/0.922'" -r 1 -qscale:v 2 frames/%06d.jpg
+
 mogrify -colorspace Gray -quality 80 frames/*.jpg
 
