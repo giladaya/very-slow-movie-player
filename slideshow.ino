@@ -4,12 +4,12 @@
 
 #include <Arduino.h>
 #include <esp_task_wdt.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+//#include "freertos/FreeRTOS.h"
+//#include "freertos/task.h"
 #include "epd_driver.h"
 #include "firasans.h"
 #include "esp_adc_cal.h"
-#include <Wire.h>
+//#include <Wire.h>
 #include <SPI.h>
 #include <SD.h>
 #include <JPEGDEC.h>
@@ -21,16 +21,39 @@
 #define SD_SCLK             14
 #define SD_CS               15
 
+#define SHOW_LOG
+
 #define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
 #define TIME_TO_SLEEP  20        /* Time ESP32 will go to sleep (in seconds) */
 
+// Error codes returned by getLastError()
+enum {
+  SUCCESS = 0,
+
+  SD_CARD_INIT_FAIL, // 1
+  FILE_OPEN_ERROR,   // 2
+  FILE_READ_ERROR,   // 3
+  JPEG_OPEN_ERROR,   // 4
+  JPEG_DEC_ERROR,    // 5
+  MEM_ALOC_ERROR,    // 6
+};
+int lastError = SUCCESS;
+
 // Track which file to draw now
 RTC_DATA_ATTR int bootCount = 0;
+RTC_DATA_ATTR int fileNumber = 0;
 
+// frame buffers
 uint8_t *framebuffer;
 uint8_t *ditherbuffer;
+
+// For voltage reading
 int vref = 1100;
 
+// =========================================
+// Jpeg decoder related
+// =========================================
+// For jpeg decoding
 JPEGDEC jpeg;
 
 // Functions to access a file on the SD card
@@ -40,7 +63,12 @@ void * myOpen(const char *filename, int32_t *size) {
   Serial.print("Open: ");
   Serial.println(filename);
   myfile = SD.open(filename);
-  *size = myfile.size();
+  if (myfile) {
+    *size = myfile.size();
+  } else {
+    lastError = FILE_OPEN_ERROR;
+  }
+
   return &myfile;
 }
 void myClose(void *handle) {
@@ -52,6 +80,7 @@ int32_t myRead(JPEGFILE *handle, uint8_t *buffer, int32_t length) {
   //  Serial.printf("Read %d\n", length);
   if (!myfile) {
     Serial.println("No file in read");
+    lastError = FILE_READ_ERROR;
     return 0;
   }
   return myfile.read(buffer, length);
@@ -59,8 +88,9 @@ int32_t myRead(JPEGFILE *handle, uint8_t *buffer, int32_t length) {
 int32_t mySeek(JPEGFILE *handle, int32_t position) {
   //  Serial.printf("Seek %d\n", position);
   if (!myfile) {
-    return 0;
     Serial.println("No file in seek");
+    lastError = FILE_READ_ERROR;
+    return 0;
   }
   return myfile.seek(position);
 }
@@ -81,42 +111,70 @@ int JPEGDraw(JPEGDRAW *pDraw) {
   return 1;
 }
 
+// =======================================
+
+/**
+ * Load a file by name, decode it and draw into a framebuffer
+ *
+ * @param name: File name to draw
+ * @param framebuffer: The framebuffer to draw to
+ *
+ * @return 0 if failed to open the file, 1 otherwise
+ */
 int drawFile(const char *name, uint8_t *framebuffer)
 {
   int res = jpeg.open((const char *)name, myOpen, myClose, myRead, mySeek, JPEGDraw);
   if (res == 0) {
     Serial.print("Failed to open file: ");
     Serial.println(name);
+    lastError = JPEG_OPEN_ERROR;
     return 0;
   }
   jpeg.setPixelType(FOUR_BIT_DITHERED);
-  jpeg.decodeDither(ditherbuffer, 0);
+  res = jpeg.decodeDither(ditherbuffer, 0);
   jpeg.close();
+
+  if (res == 0) {
+    Serial.print("Failed to decode file: ");
+    Serial.println(name);
+    lastError = JPEG_DECODE_ERROR;
+    return 0;
+  }
 
   return 1;
 }
 
 void setup()
 {
+  // Measure wake time
   volatile uint32_t t1 = millis();
 
-  char buf[128];
-
   Serial.begin(115200);
+
+  //--------------------------
+  // Init SD card
+  //--------------------------
 
   /*
     SD Card test
     Only as a test SdCard hardware, use example reference
     https://github.com/espressif/arduino-esp32/tree/master/libraries/SD/examples
   * * */
+  char logBuf[128];
+
   SPI.begin(SD_SCLK, SD_MISO, SD_MOSI);
   bool rlst = SD.begin(SD_CS);
   if (!rlst) {
     Serial.println("SD init failed");
-    snprintf(buf, 128, "➸ No detected SdCard");
+    snprintf(logBuf, 128, "➸ No detected SdCard");
+    lastError = SD_CARD_INIT_FAIL;
   } else {
-    snprintf(buf, 128, "➸ Detected SdCard insert:%.2f GB", SD.cardSize() / 1024.0 / 1024.0 / 1024.0);
+    snprintf(logBuf, 128, "➸ Detected SdCard insert:%.2f GB", SD.cardSize() / 1024.0 / 1024.0 / 1024.0);
   }
+
+  //--------------------------
+  // Read voltage
+  //--------------------------
 
   // Correct the ADC reference voltage
   esp_adc_cal_characteristics_t adc_chars;
@@ -127,19 +185,21 @@ void setup()
   }
 
   // When reading the battery voltage, POWER_EN must be turned on
+  epd_init();
   epd_poweron();
 
-  uint16_t v = analogRead(BATT_PIN);
-  float battery_voltage = ((float)v / 4095.0) * 2.0 * 3.3 * (vref / 1000.0);
+  uint16_t vRaw = analogRead(BATT_PIN);
+  float battery_voltage = ((float)vRaw / 4095.0) * 2.0 * 3.3 * (vref / 1000.0);
   String voltage = "➸ Voltage :" + String(battery_voltage) + "V";
   Serial.println(voltage);
 
-  epd_init();
-
+  //--------------------------
   // Init frame buffers
+  //--------------------------
   framebuffer = (uint8_t *)heap_caps_malloc(EPD_WIDTH * EPD_HEIGHT / 2, MALLOC_CAP_SPIRAM);
   if (!framebuffer) {
     Serial.println("alloc memory failed !!!");
+    lastError = MEM_ALOC_ERROR;
     while (1);
   }
   memset(framebuffer, 0xFF, EPD_WIDTH * EPD_HEIGHT / 2);
@@ -147,76 +207,62 @@ void setup()
   ditherbuffer = (uint8_t *)heap_caps_malloc(EPD_WIDTH * EPD_HEIGHT / 2, MALLOC_CAP_SPIRAM);
   memset(ditherbuffer, 0xFF, EPD_WIDTH * EPD_HEIGHT / 2);
 
+  // Track reboots
   ++bootCount;
   Serial.println("Boot number: " + String(bootCount));
 
+  // Calculate file name
   char fileName[18];
-  sprintf(fileName, "/frames/%06d.jpg", bootCount);
+  ++fileNumber;
+  sprintf(fileName, "/frames/%06d.jpg", fileNumber);
 
-  File entry = SD.open(fileName);
-
+  // Draw to buffer
   int drawRes = drawFile(fileName, framebuffer);
-  if (drawRes == 0) {
-    Serial.println("Reseting boot counter");
-    bootCount = 0;
-  } else {
-    if (battery_voltage < VOLTAGE_THRESHOLD) {
-      epd_fill_rect(15, 10, 10, 5, 0xff, framebuffer);
-      epd_draw_rect(15, 10, 10, 5, 0x00, framebuffer);
-      epd_fill_rect(10, 15, 20, 30, 0xff, framebuffer);
-      epd_draw_rect(10, 15, 20, 30, 0x00, framebuffer);
-    }
 
-    epd_clear();
-    epd_draw_grayscale_image(epd_full_screen(), framebuffer);
-    // Draw again for deeper blacks
-    delay(700);
-    epd_draw_grayscale_image(epd_full_screen(), framebuffer);
-    delay(700);
-    epd_draw_grayscale_image(epd_full_screen(), framebuffer);
+  if (lastError != SUCCESS) {
+    // Failed to draw
+    // Assume it's because we tried to open a file that does not exist
+    // Start from beginning
+    Serial.println("Reseting boot counter");
+    fileNumber = 0;
   }
 
+  #ifdef SHOW_LOG
+  epd_fill_rect(100, 460, 760, 50, 0xff, framebuffer);
+  sprintf(logBuf, "b# %d, Err: %d, v: %d, sd: %d|%d, jpe: %d", bootCount, lastError, vRaw, rlst, SD.cardType(), jpeg.getLastError());
+  int cursor_x = 110;
+  int cursor_y = 500;
+
+  writeln((GFXfont *)&FiraSans, logBuf, &cursor_x, &cursor_y, framebuffer);
+  #endif
+
+  // Display low battery indicator if needed
+  if (battery_voltage < VOLTAGE_THRESHOLD) {
+    epd_fill_rect(15, 10, 10, 5, 0xff, framebuffer);
+    epd_draw_rect(15, 10, 10, 5, 0x00, framebuffer);
+    epd_fill_rect(10, 15, 20, 30, 0xff, framebuffer);
+    epd_draw_rect(10, 15, 20, 30, 0x00, framebuffer);
+  }
+
+  // Draw from frame buffer to display
+  epd_clear();
+  epd_draw_grayscale_image(epd_full_screen(), framebuffer);
+  // Draw again for deeper blacks
+  delay(700);
+  epd_draw_grayscale_image(epd_full_screen(), framebuffer);
+  delay(700);
+  epd_draw_grayscale_image(epd_full_screen(), framebuffer);
 
 
-  // === log
-  //  Rect_t logArea = {
-  //    .x = 100,
-  //    .y = 460,
-  //    .width = 760,
-  //    .height = 50,
-  //  };
-  //
-  //  int cursor_x = 200;
-  //  int cursor_y = 500;
-  //
-  //  epd_clear_area(logArea);
-  //  writeln((GFXfont *)&FiraSans, fileName, &cursor_x, &cursor_y, NULL);
-  //
-  //  cursor_x += 40;
-  //  sprintf(fileName, "%d", jpeg.getLastError());
-  //
-  //  writeln((GFXfont *)&FiraSans, fileName, &cursor_x, &cursor_y, NULL);
-  // === log end
-
-
-  // There are two ways to close
-
-  // It will turn off the power of the ink screen, but cannot turn off the blue LED light.
-  //   epd_poweroff();
-
-  //It will turn off the power of the entire
-  // POWER_EN control and also turn off the blue LED light
   epd_poweroff_all();
 
-  delay(1000);
-
+  // Report awake time
   volatile uint32_t t2 = millis();
   Serial.printf("Was awake for %dms.\n", t2 - t1);
 
+  // Go to sleep
   esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
-  Serial.println("Setup ESP32 to sleep for every " + String(TIME_TO_SLEEP) +
-                 " Seconds");
-  Serial.println("Going to sleep now");
+  Serial.println("Going to sleep now for " + String(TIME_TO_SLEEP) + " Seconds");
   Serial.flush();
   esp_deep_sleep_start();
 }
