@@ -1,3 +1,5 @@
+# Option 1
+
 mkdir frames
 
 # Using colorlevels filter
@@ -8,4 +10,17 @@ ffmpeg -ss 05:20 -i I.Am.Cuba.1964.720p.BluRay.x264.AAC-[YTS.MX].mp4 -vf "scale=
 ffmpeg -ss 05:20 -i I.Am.Cuba.1964.720p.BluRay.x264.AAC-[YTS.MX].mp4 -vf "scale=960:720,crop=960:540,curves=all='0/0 0.023/0.078 0.375/0.6 0.726/0.83 1/0.922'" -r 1 -qscale:v 2 frames/%06d.jpg
 
 mogrify -colorspace Gray -quality 80 frames/*.jpg
+
+
+#==================================
+
+# Option 2
+
+mkdir frames
+
+# Extract frames and crop - no change
+ffmpeg -ss 05:20 -i I.Am.Cuba.1964.720p.BluRay.x264.AAC-[YTS.MX].mp4 -vf "scale=960:720,crop=960:540" -r 1 -qscale:v 2 frames/%06d.jpg
+
+# Adjust contrast
+mogrify -unsharp 8x1.0+0.08+0 -contrast-stretch 0%x0.0% -colorspace Gray -quality 80 frames/*.jpg
 

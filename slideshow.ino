@@ -21,10 +21,16 @@
 #define SD_SCLK             14
 #define SD_CS               15
 
-#define SHOW_LOG
+//#define SHOW_LOG
+//#define SHOW_BARS
+
+// delay between contrast-enhancing re-draws of buffer
+#define REDRAW_DLAY 100
+// threshold of frame values average to consider a frame as dark
+#define BRIGHTNESS_TH 3.75
 
 #define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
-#define TIME_TO_SLEEP  20        /* Time ESP32 will go to sleep (in seconds) */
+#define TIME_TO_SLEEP  60        /* Time ESP32 will go to sleep (in seconds) */
 
 // Error codes returned by getLastError()
 enum {
@@ -39,8 +45,10 @@ enum {
 };
 int lastError = SUCCESS;
 
-// Track which file to draw now
+// Track number of wakeups
 RTC_DATA_ATTR int bootCount = 0;
+
+// Track which file to draw now
 RTC_DATA_ATTR int fileNumber = 0;
 
 // frame buffers
@@ -110,17 +118,16 @@ int JPEGDraw(JPEGDRAW *pDraw) {
   //              pDraw->x, pDraw->y, pDraw->iWidth, pDraw->iHeight);
   return 1;
 }
-
 // =======================================
 
 /**
- * Load a file by name, decode it and draw into a framebuffer
- *
- * @param name: File name to draw
- * @param framebuffer: The framebuffer to draw to
- *
- * @return 0 if failed to open the file, 1 otherwise
- */
+   Load a file by name, decode it and draw into a framebuffer
+
+   @param name: File name to draw
+   @param framebuffer: The framebuffer to draw to
+
+   @return 0 if failed to open the file, 1 otherwise
+*/
 int drawFile(const char *name, uint8_t *framebuffer)
 {
   int res = jpeg.open((const char *)name, myOpen, myClose, myRead, mySeek, JPEGDraw);
@@ -144,25 +151,93 @@ int drawFile(const char *name, uint8_t *framebuffer)
   return 1;
 }
 
+/**
+   Calculate average of values in framebuffer.
+   Pixel data is packed (two pixels per byte)
+*/
+float calcAverage(uint8_t *framebuffer) {
+  // calculate frame average
+  uint32_t sum = 0;
+  uint8_t mini = 255;
+  uint8_t maxi = 0;
+  uint8_t pix1, pix2;
+  for (uint32_t i = 0; i < EPD_WIDTH * EPD_HEIGHT / 2; i++) {
+    pix1 = framebuffer[i] & 0x0F;
+    pix2 = (framebuffer[i] & 0xF0) >> 4;
+    if (pix1 > maxi) maxi = pix1;
+    if (pix2 > maxi) maxi = pix2;
+    if (pix1 < mini) mini = pix1;
+    if (pix2 < mini) mini = pix2;
+    sum = sum + pix1 + pix2;
+  }
+  float frameAverage = (float)sum / (EPD_WIDTH * EPD_HEIGHT);
+  Serial.printf("min: %d, max: %d, avg: %.2f, sum: %d\n", mini, maxi, frameAverage, sum);
+  return frameAverage;
+}
+
+void drawDark(uint8_t *framebuffer) {
+  epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
+  //  epd_draw_grayscale_image(epd_full_screen(), framebuffer);
+  delay(REDRAW_DLAY);
+  epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
+  epd_push_pixels(epd_full_screen(), 20, 0);
+  epd_push_pixels(epd_full_screen(), 20, 0);
+  delay(REDRAW_DLAY);
+  epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_BLACK);
+}
+
+void drawLight(uint8_t *framebuffer) {
+  epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
+  epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_BLACK);
+  delay(REDRAW_DLAY);
+
+  epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_BLACK);
+
+  delay(REDRAW_DLAY);
+
+  epd_push_pixels(epd_full_screen(), 20, 1);
+  epd_push_pixels(epd_full_screen(), 20, 1);
+
+  epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
+}
+
+void drawLightSimple(uint8_t *framebuffer) {
+  epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
+  epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_BLACK);
+  epd_push_pixels(epd_full_screen(), 20, 1);
+  epd_push_pixels(epd_full_screen(), 20, 1);
+  epd_push_pixels(epd_full_screen(), 20, 1);
+  epd_push_pixels(epd_full_screen(), 20, 1);
+  epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
+}
+
 void setup()
 {
   // Measure wake time
   volatile uint32_t t1 = millis();
+
+  char logBuf[128];
 
   Serial.begin(115200);
 
   //--------------------------
   // Init SD card
   //--------------------------
-
   /*
     SD Card test
     Only as a test SdCard hardware, use example reference
     https://github.com/espressif/arduino-esp32/tree/master/libraries/SD/examples
   * * */
-  char logBuf[128];
 
+  // Note:
+  // The order of the following lines is VERY important!
+  // 1. Init SPI
   SPI.begin(SD_SCLK, SD_MISO, SD_MOSI);
+
+  // 2. Init EPD
+  epd_init();
+
+  // 3. Init SD card
   bool rlst = SD.begin(SD_CS);
   if (!rlst) {
     Serial.println("SD init failed");
@@ -185,7 +260,6 @@ void setup()
   }
 
   // When reading the battery voltage, POWER_EN must be turned on
-  epd_init();
   epd_poweron();
 
   uint16_t vRaw = analogRead(BATT_PIN);
@@ -213,7 +287,7 @@ void setup()
 
   // Calculate file name
   char fileName[18];
-  ++fileNumber;
+  fileNumber += 1;
   sprintf(fileName, "/frames/%06d.jpg", fileNumber);
 
   // Draw to buffer
@@ -225,16 +299,41 @@ void setup()
     // Start from beginning
     Serial.println("Reseting boot counter");
     fileNumber = 0;
+    int cursor_x = 420;
+    int cursor_y = 290;
+    writeln((GFXfont *)&FiraSans, "The End", &cursor_x, &cursor_y, framebuffer);
   }
 
-  #ifdef SHOW_LOG
+  // calculate frame average
+  float frameAverage = calcAverage(framebuffer);
+
+#ifdef SHOW_LOG
   epd_fill_rect(100, 460, 760, 50, 0xff, framebuffer);
-  sprintf(logBuf, "b# %d, Err: %d, v: %d, sd: %d|%d, jpe: %d", bootCount, lastError, vRaw, rlst, SD.cardType(), jpeg.getLastError());
+  sprintf(
+    logBuf,
+    "b# %d, Err: %d, v: %.2f, sd: %d|%d, jpe: %d",
+    bootCount,
+    lastError,
+    battery_voltage,
+    rlst,
+    SD.cardType(),
+    jpeg.getLastError()
+  );
   int cursor_x = 110;
   int cursor_y = 500;
 
   writeln((GFXfont *)&FiraSans, logBuf, &cursor_x, &cursor_y, framebuffer);
-  #endif
+#endif
+
+#ifdef SHOW_BARS
+  uint8_t c1 = bootCount % 2 ? 0xff : 0x00;
+  uint8_t c2 = bootCount % 2 ? 0x00 : 0xff;
+
+  epd_fill_rect(0, 260, 480, 10, c1, framebuffer);
+  epd_fill_rect(480, 260, 480, 10, c2, framebuffer);
+  epd_fill_rect(0, 270, 480, 10, c2, framebuffer);
+  epd_fill_rect(480, 270, 480, 10, c1, framebuffer);
+#endif
 
   // Display low battery indicator if needed
   if (battery_voltage < VOLTAGE_THRESHOLD) {
@@ -246,13 +345,14 @@ void setup()
 
   // Draw from frame buffer to display
   epd_clear();
-  epd_draw_grayscale_image(epd_full_screen(), framebuffer);
-  // Draw again for deeper blacks
-  delay(700);
-  epd_draw_grayscale_image(epd_full_screen(), framebuffer);
-  delay(700);
-  epd_draw_grayscale_image(epd_full_screen(), framebuffer);
 
+  if (frameAverage < BRIGHTNESS_TH) {
+    Serial.println("Drawing for dark frame");
+    drawDark(framebuffer);
+  } else {
+    Serial.println("Drawing for light frame");
+    drawLightSimple(framebuffer);
+  }
 
   epd_poweroff_all();
 
@@ -260,7 +360,6 @@ void setup()
   volatile uint32_t t2 = millis();
   Serial.printf("Was awake for %dms.\n", t2 - t1);
 
-  // Go to sleep
   esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
   Serial.println("Going to sleep now for " + String(TIME_TO_SLEEP) + " Seconds");
   Serial.flush();
