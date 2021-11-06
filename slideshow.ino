@@ -14,7 +14,7 @@
 #include <SD.h>
 #include <JPEGDEC.h>
 
-#define VOLTAGE_THRESHOLD   3.0
+#define VOLTAGE_THRESHOLD   3.9
 #define BATT_PIN            36
 #define SD_MISO             12
 #define SD_MOSI             13
@@ -28,6 +28,8 @@
 #define REDRAW_DLAY 100
 // threshold of frame values average to consider a frame as dark
 #define BRIGHTNESS_TH 3.75
+
+#define FOLDER "frames"
 
 #define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
 #define TIME_TO_SLEEP  60        /* Time ESP32 will go to sleep (in seconds) */
@@ -152,26 +154,29 @@ int drawFile(const char *name, uint8_t *framebuffer)
 }
 
 /**
-   Calculate average of values in framebuffer.
+   Calculate average of values in framebuffer,
+   using pixels from center area
    Pixel data is packed (two pixels per byte)
 */
-float calcAverage(uint8_t *framebuffer) {
+float calcPartialAvg(uint8_t *framebuffer, uint8_t margin) {
   // calculate frame average
   uint32_t sum = 0;
   uint8_t mini = 255;
   uint8_t maxi = 0;
   uint8_t pix1, pix2;
-  for (uint32_t i = 0; i < EPD_WIDTH * EPD_HEIGHT / 2; i++) {
-    pix1 = framebuffer[i] & 0x0F;
-    pix2 = (framebuffer[i] & 0xF0) >> 4;
-    if (pix1 > maxi) maxi = pix1;
-    if (pix2 > maxi) maxi = pix2;
-    if (pix1 < mini) mini = pix1;
-    if (pix2 < mini) mini = pix2;
-    sum = sum + pix1 + pix2;
+  for (uint32_t i = margin; i < EPD_HEIGHT - margin; i++) {
+    for (uint32_t j = margin; j < EPD_WIDTH / 2 - margin; j++) {
+      pix1 = framebuffer[i * EPD_WIDTH / 2 + j] & 0x0F;
+      pix2 = (framebuffer[i * EPD_WIDTH / 2 + j] & 0xF0) >> 4;
+      if (pix1 > maxi) maxi = pix1;
+      if (pix2 > maxi) maxi = pix2;
+      if (pix1 < mini) mini = pix1;
+      if (pix2 < mini) mini = pix2;
+      sum = sum + pix1 + pix2;
+    }
   }
-  float frameAverage = (float)sum / (EPD_WIDTH * EPD_HEIGHT);
-  Serial.printf("min: %d, max: %d, avg: %.2f, sum: %d\n", mini, maxi, frameAverage, sum);
+  float frameAverage = (float)sum / ((EPD_WIDTH - margin - margin) * (EPD_HEIGHT - margin - margin));
+  Serial.printf("margin %d, min: %d, max: %d, avg: %.2f, sum: %d\n", margin, mini, maxi, frameAverage, sum);
   return frameAverage;
 }
 
@@ -209,6 +214,15 @@ void drawLightSimple(uint8_t *framebuffer) {
   epd_push_pixels(epd_full_screen(), 20, 1);
   epd_push_pixels(epd_full_screen(), 20, 1);
   epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
+}
+
+void drawBattery(uint8_t *framebuffer, float voltage) {
+  if (voltage < VOLTAGE_THRESHOLD) {
+    epd_fill_rect(15, 10, 10, 5, 0xff, framebuffer);
+    epd_draw_rect(15, 10, 10, 5, 0x00, framebuffer);
+    epd_fill_rect(10, 15, 20, 30, 0xff, framebuffer);
+    epd_draw_rect(10, 15, 20, 30, 0x00, framebuffer);
+  }
 }
 
 void setup()
@@ -288,38 +302,35 @@ void setup()
   // Calculate file name
   char fileName[18];
   fileNumber += 1;
-  sprintf(fileName, "/frames/%06d.jpg", fileNumber);
+  sprintf(fileName, "/%s/%06d.jpg", FOLDER, fileNumber);
 
-  // Draw to buffer
-  int drawRes = drawFile(fileName, framebuffer);
-
-  if (lastError != SUCCESS) {
-    // Failed to draw
-    // Assume it's because we tried to open a file that does not exist
-    // Start from beginning
-    Serial.println("Reseting boot counter");
+  if (!SD.exists(fileName)) {
     fileNumber = 0;
     int cursor_x = 420;
     int cursor_y = 290;
     writeln((GFXfont *)&FiraSans, "The End", &cursor_x, &cursor_y, framebuffer);
+  } else {
+    // Draw to buffer
+    drawFile(fileName, framebuffer);
   }
 
   // calculate frame average
-  float frameAverage = calcAverage(framebuffer);
+  float frameAverage = calcPartialAvg(framebuffer, 50);
 
 #ifdef SHOW_LOG
-  epd_fill_rect(100, 460, 760, 50, 0xff, framebuffer);
+  epd_fill_rect(50, 460, 860, 50, 0xff, framebuffer);
+  epd_fill_rect(40, 475, 20, 20, 0x00, framebuffer);
+  epd_fill_rect(900, 475, 20, 20, 0x00, framebuffer);
   sprintf(
     logBuf,
-    "b# %d, Err: %d, v: %.2f, sd: %d|%d, jpe: %d",
+    "%s, b# %d, v: %.2f, Err: %d, %d",
+    fileName,
     bootCount,
-    lastError,
     battery_voltage,
-    rlst,
-    SD.cardType(),
+    lastError,
     jpeg.getLastError()
   );
-  int cursor_x = 110;
+  int cursor_x = 60;
   int cursor_y = 500;
 
   writeln((GFXfont *)&FiraSans, logBuf, &cursor_x, &cursor_y, framebuffer);
@@ -329,19 +340,14 @@ void setup()
   uint8_t c1 = bootCount % 2 ? 0xff : 0x00;
   uint8_t c2 = bootCount % 2 ? 0x00 : 0xff;
 
-  epd_fill_rect(0, 260, 480, 10, c1, framebuffer);
-  epd_fill_rect(480, 260, 480, 10, c2, framebuffer);
-  epd_fill_rect(0, 270, 480, 10, c2, framebuffer);
-  epd_fill_rect(480, 270, 480, 10, c1, framebuffer);
+  epd_fill_rect(0, 0, 480, 10, c1, framebuffer);
+  epd_fill_rect(480, 0, 480, 10, c2, framebuffer);
+  epd_fill_rect(0, 530, 480, 10, c2, framebuffer);
+  epd_fill_rect(480, 530, 480, 10, c1, framebuffer);
 #endif
 
   // Display low battery indicator if needed
-  if (battery_voltage < VOLTAGE_THRESHOLD) {
-    epd_fill_rect(15, 10, 10, 5, 0xff, framebuffer);
-    epd_draw_rect(15, 10, 10, 5, 0x00, framebuffer);
-    epd_fill_rect(10, 15, 20, 30, 0xff, framebuffer);
-    epd_draw_rect(10, 15, 20, 30, 0x00, framebuffer);
-  }
+  drawBattery(framebuffer, battery_voltage);
 
   // Draw from frame buffer to display
   epd_clear();
@@ -354,6 +360,8 @@ void setup()
     drawLightSimple(framebuffer);
   }
 
+  // Turn off the power of the entire
+  // POWER_EN control and also turn off the blue LED light
   epd_poweroff_all();
 
   // Report awake time
