@@ -29,10 +29,10 @@
 // threshold of frame values average to consider a frame as dark
 #define BRIGHTNESS_TH 3.75
 
-#define FOLDER "frames"
+#define FOLDER "moonrise"
 
 #define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
-#define TIME_TO_SLEEP  60        /* Time ESP32 will go to sleep (in seconds) */
+#define TIME_TO_SLEEP  300        /* Time ESP32 will go to sleep (in seconds) */
 
 // Error codes returned by getLastError()
 enum {
@@ -51,7 +51,7 @@ int lastError = SUCCESS;
 RTC_DATA_ATTR int bootCount = 0;
 
 // Track which file to draw now
-RTC_DATA_ATTR int fileNumber = 0;
+RTC_DATA_ATTR int fileNumber = 1;
 
 // frame buffers
 uint8_t *framebuffer;
@@ -183,7 +183,7 @@ float calcPartialAvg(uint8_t *framebuffer, uint8_t margin) {
 void drawDark(uint8_t *framebuffer) {
   epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
   //  epd_draw_grayscale_image(epd_full_screen(), framebuffer);
-  delay(REDRAW_DLAY);
+//  delay(REDRAW_DLAY);
   epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
   epd_push_pixels(epd_full_screen(), 20, 0);
   epd_push_pixels(epd_full_screen(), 20, 0);
@@ -299,13 +299,15 @@ void setup()
   ++bootCount;
   Serial.println("Boot number: " + String(bootCount));
 
+  //--------------------------
   // Calculate file name
-  char fileName[18];
-  fileNumber += 1;
+  //--------------------------
+  char fileName[128];
   sprintf(fileName, "/%s/%06d.jpg", FOLDER, fileNumber);
+  fileNumber += 1;
 
   if (!SD.exists(fileName)) {
-    fileNumber = 0;
+    fileNumber = 1;
     int cursor_x = 420;
     int cursor_y = 290;
     writeln((GFXfont *)&FiraSans, "The End", &cursor_x, &cursor_y, framebuffer);
@@ -317,10 +319,6 @@ void setup()
   // calculate frame average
   float frameAverage = calcPartialAvg(framebuffer, 50);
 
-#ifdef SHOW_LOG
-  epd_fill_rect(50, 460, 860, 50, 0xff, framebuffer);
-  epd_fill_rect(40, 475, 20, 20, 0x00, framebuffer);
-  epd_fill_rect(900, 475, 20, 20, 0x00, framebuffer);
   sprintf(
     logBuf,
     "%s, b# %d, v: %.2f, Err: %d, %d",
@@ -330,6 +328,13 @@ void setup()
     lastError,
     jpeg.getLastError()
   );
+  Serial.println(logBuf);
+
+#ifdef SHOW_LOG
+  epd_fill_rect(50, 460, 860, 50, 0xff, framebuffer);
+  epd_fill_rect(40, 475, 20, 20, 0x00, framebuffer);
+  epd_fill_rect(900, 475, 20, 20, 0x00, framebuffer);
+
   int cursor_x = 60;
   int cursor_y = 500;
 
@@ -350,7 +355,9 @@ void setup()
   drawBattery(framebuffer, battery_voltage);
 
   // Draw from frame buffer to display
-  epd_clear();
+//  epd_clear();
+  epd_clear_area_cycles(epd_full_screen(), 4, 50);
+  epd_clear_area_cycles(epd_full_screen(), 4, 20);
 
   if (frameAverage < BRIGHTNESS_TH) {
     Serial.println("Drawing for dark frame");
