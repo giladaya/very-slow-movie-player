@@ -20,3 +20,5 @@ mogrify -colorspace Gray -quality 80 frames/*.jpg
 
 Note that use of curves filter for improved quality when displayed on the e-ink screen.
 
+This script was usefull for generating images tha look better on the e-ink display:
+http://www.fmwconcepts.com/imagemagick/dualtonemap/index.php
