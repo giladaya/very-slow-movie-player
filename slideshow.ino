@@ -14,7 +14,7 @@
 #include <SD.h>
 #include <JPEGDEC.h>
 
-#define VOLTAGE_THRESHOLD   3.9
+#define VOLTAGE_THRESHOLD   3.7
 #define BATT_PIN            36
 #define SD_MISO             12
 #define SD_MOSI             13
@@ -51,7 +51,9 @@ int lastError = SUCCESS;
 RTC_DATA_ATTR int bootCount = 0;
 
 // Track which file to draw now
-RTC_DATA_ATTR int fileNumber = 1;
+RTC_DATA_ATTR int fileNumber = 0;
+RTC_DATA_ATTR char curFolder[128];
+char fileName[128];
 
 // frame buffers
 uint8_t *framebuffer;
@@ -180,39 +182,14 @@ float calcPartialAvg(uint8_t *framebuffer, uint8_t margin) {
   return frameAverage;
 }
 
-void drawDark(uint8_t *framebuffer) {
+void drawSimple(uint8_t *framebuffer) {
+//epd_clear();
   epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
-  //  epd_draw_grayscale_image(epd_full_screen(), framebuffer);
-//  delay(REDRAW_DLAY);
-  epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
-  epd_push_pixels(epd_full_screen(), 20, 0);
-  epd_push_pixels(epd_full_screen(), 20, 0);
-  delay(REDRAW_DLAY);
+  delay(50);
   epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_BLACK);
-}
-
-void drawLight(uint8_t *framebuffer) {
-  epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
-  epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_BLACK);
-  delay(REDRAW_DLAY);
-
-  epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_BLACK);
-
-  delay(REDRAW_DLAY);
-
-  epd_push_pixels(epd_full_screen(), 20, 1);
-  epd_push_pixels(epd_full_screen(), 20, 1);
-
-  epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
-}
-
-void drawLightSimple(uint8_t *framebuffer) {
-  epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
-  epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_BLACK);
-  epd_push_pixels(epd_full_screen(), 20, 1);
-  epd_push_pixels(epd_full_screen(), 20, 1);
-  epd_push_pixels(epd_full_screen(), 20, 1);
-  epd_push_pixels(epd_full_screen(), 20, 1);
+  delay(50);
+  epd_push_pixels(epd_full_screen(), 30, 1);
+  delay(50);
   epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
 }
 
@@ -222,6 +199,71 @@ void drawBattery(uint8_t *framebuffer, float voltage) {
     epd_draw_rect(15, 10, 10, 5, 0x00, framebuffer);
     epd_fill_rect(10, 15, 20, 30, 0xff, framebuffer);
     epd_draw_rect(10, 15, 20, 30, 0x00, framebuffer);
+  }
+}
+
+/*
+ * Update the global file tracking variables:
+ * curFolder
+ * fileNumber
+ * fileName
+ */
+void moveToNextFolder() {
+  Serial.println("Searching new folder");
+  // Reset file counter
+  fileNumber = 1;
+  
+  // Now need to find the next folder
+  File dir = SD.open("/");
+  dir.rewindDirectory();
+  
+  File entry;
+  // Try to find File for curFolder
+  do {
+    entry = dir.openNextFile();
+  } while (entry && ! (entry.isDirectory() && strcmp(entry.name(), curFolder)));
+
+  if (!entry) {
+    // current folder was not found, just rollback.
+    dir.rewindDirectory();
+  }
+
+  // Now look for a folder with a file we can display
+  bool looped = false;
+  
+  while (true) {
+    entry = dir.openNextFile();
+    if (!entry) {
+      // Reached the end of the folder, try to go back to the start
+      if (!looped) {
+        Serial.println("Rewind folder");
+        dir.rewindDirectory();
+        looped = true;  
+        continue;
+      } else {
+        // We already looped once, so nothing found - give up
+        Serial.println("Suitable folder not found");
+        break;
+      }
+    }
+
+    // We are guaranteed to have entry here
+    if (entry.isDirectory()) {
+      sprintf(fileName, "%s/%06d.jpg", entry.name(), fileNumber);
+      if (SD.exists(fileName)) {
+        strlcpy(curFolder, entry.name(), 127);
+        Serial.printf("Found new folder %s\n", curFolder);
+        break;
+      }  
+    }
+  }
+}
+void updateFolderFile() {
+  fileNumber += 1;
+  sprintf(fileName, "%s/%06d.jpg", curFolder, fileNumber);
+
+  if (!SD.exists(fileName)) {
+    moveToNextFolder();
   }
 }
 
@@ -302,23 +344,15 @@ void setup()
   //--------------------------
   // Calculate file name
   //--------------------------
-  char fileName[128];
-  sprintf(fileName, "/%s/%06d.jpg", FOLDER, fileNumber);
-  fileNumber += 1;
-
-  if (!SD.exists(fileName)) {
-    fileNumber = 1;
+  updateFolderFile();
+  if (fileNumber > 0) {
+    drawFile(fileName, framebuffer);
+  } else {
     int cursor_x = 420;
     int cursor_y = 290;
     writeln((GFXfont *)&FiraSans, "The End", &cursor_x, &cursor_y, framebuffer);
-  } else {
-    // Draw to buffer
-    drawFile(fileName, framebuffer);
   }
-
-  // calculate frame average
-  float frameAverage = calcPartialAvg(framebuffer, 50);
-
+  
   sprintf(
     logBuf,
     "%s, b# %d, v: %.2f, Err: %d, %d",
@@ -355,17 +389,7 @@ void setup()
   drawBattery(framebuffer, battery_voltage);
 
   // Draw from frame buffer to display
-//  epd_clear();
-  epd_clear_area_cycles(epd_full_screen(), 4, 50);
-  epd_clear_area_cycles(epd_full_screen(), 4, 20);
-
-  if (frameAverage < BRIGHTNESS_TH) {
-    Serial.println("Drawing for dark frame");
-    drawDark(framebuffer);
-  } else {
-    Serial.println("Drawing for light frame");
-    drawLightSimple(framebuffer);
-  }
+  drawSimple(framebuffer);
 
   // Turn off the power of the entire
   // POWER_EN control and also turn off the blue LED light
