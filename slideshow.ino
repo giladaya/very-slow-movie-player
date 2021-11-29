@@ -29,10 +29,8 @@
 // threshold of frame values average to consider a frame as dark
 #define BRIGHTNESS_TH 3.75
 
-#define FOLDER "moonrise"
-
 #define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
-#define TIME_TO_SLEEP  300        /* Time ESP32 will go to sleep (in seconds) */
+#define TIME_TO_SLEEP  150        /* Time ESP32 will go to sleep (in seconds) */
 
 // Error codes returned by getLastError()
 enum {
@@ -54,10 +52,13 @@ RTC_DATA_ATTR int bootCount = 0;
 RTC_DATA_ATTR int fileNumber = 0;
 RTC_DATA_ATTR char curFolder[128];
 char fileName[128];
+#define FRAMES_DELTA 1
 
 // frame buffers
+uint8_t *_jpegDrawBuffer;
 uint8_t *framebuffer;
 uint8_t *ditherbuffer;
+uint8_t *nframebuffer;
 
 // For voltage reading
 int vref = 1100;
@@ -116,7 +117,7 @@ int JPEGDraw(JPEGDRAW *pDraw) {
     .height =  pDraw->iHeight
   };
 
-  epd_copy_to_framebuffer(area, (uint8_t *) pDraw->pPixels, framebuffer);
+  epd_copy_to_framebuffer(area, (uint8_t *) pDraw->pPixels, _jpegDrawBuffer);
 
   //Serial.printf("jpeg draw: x,y=%d,%d, cx,cy = %d,%d\n",
   //              pDraw->x, pDraw->y, pDraw->iWidth, pDraw->iHeight);
@@ -132,8 +133,9 @@ int JPEGDraw(JPEGDRAW *pDraw) {
 
    @return 0 if failed to open the file, 1 otherwise
 */
-int drawFile(const char *name, uint8_t *framebuffer)
+int drawFile(const char *name, uint8_t *frameBuffer)
 {
+  _jpegDrawBuffer = frameBuffer;
   int res = jpeg.open((const char *)name, myOpen, myClose, myRead, mySeek, JPEGDraw);
   if (res == 0) {
     Serial.print("Failed to open file: ");
@@ -183,14 +185,69 @@ float calcPartialAvg(uint8_t *framebuffer, uint8_t margin) {
 }
 
 void drawSimple(uint8_t *framebuffer) {
-//epd_clear();
+  epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_WHITE);
+  delay(50);
   epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
   delay(50);
+}
+
+void draw01(uint8_t *framebuffer) {
+//epd_clear();
+  epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_WHITE);
+  delay(50);
+  epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
+  delay(50);
+
+  //epd_push_pixels(epd_full_screen(), 5, 0);
+  
+  epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_BLACK);
+  //delay(50);
+  
+  epd_push_pixels(epd_full_screen(), 20, 1);
+  //delay(30);
+  
+  epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
+  
+  epd_push_pixels(epd_full_screen(), 2, 1);
+}
+
+void draw02(uint8_t *framebuffer) {
+  epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_WHITE);
+  delay(50);
+  epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
+  delay(50);
+
   epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_BLACK);
   delay(50);
-  epd_push_pixels(epd_full_screen(), 30, 1);
-  delay(50);
+  
   epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
+  
+  epd_push_pixels(epd_full_screen(), 2, 1);
+}
+
+void draw04(uint8_t *framebuffer) {
+  epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_WHITE);
+  delay(50);
+  
+  epd_push_pixels(epd_full_screen(), 20, 0);
+  delay(20);
+  epd_push_pixels(epd_full_screen(), 20, 0);
+  delay(20);
+  
+  delay(150);
+  epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_BLACK);
+  //epd_push_pixels(epd_full_screen(), 10, 1);
+  epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
+}
+
+// Used to erase previous frame before drawing a new frame
+void drawNegative(uint8_t *frameBuffer) {
+  epd_draw_image(epd_full_screen(), frameBuffer, WHITE_ON_WHITE);
+  return;
+  delay(50);
+  epd_draw_image(epd_full_screen(), frameBuffer, WHITE_ON_WHITE);
+  delay(50);
+  epd_draw_image(epd_full_screen(), frameBuffer, WHITE_ON_WHITE);
 }
 
 void drawBattery(uint8_t *framebuffer, float voltage) {
@@ -200,6 +257,10 @@ void drawBattery(uint8_t *framebuffer, float voltage) {
     epd_fill_rect(10, 15, 20, 30, 0xff, framebuffer);
     epd_draw_rect(10, 15, 20, 30, 0x00, framebuffer);
   }
+}
+
+void genFileName(const char* folder, const int fileNumber, char* fileName) {
+  sprintf(fileName, "%s/%06d.jpg", folder, fileNumber);
 }
 
 /*
@@ -219,12 +280,14 @@ void moveToNextFolder() {
   
   File entry;
   // Try to find File for curFolder
+  Serial.printf("Moving to current folder %s\n", curFolder);
   do {
     entry = dir.openNextFile();
   } while (entry && ! (entry.isDirectory() && strcmp(entry.name(), curFolder)));
 
   if (!entry) {
     // current folder was not found, just rollback.
+    Serial.println("current folder was not found, just rollback");
     dir.rewindDirectory();
   }
 
@@ -248,19 +311,22 @@ void moveToNextFolder() {
     }
 
     // We are guaranteed to have entry here
+    Serial.printf("Checking %s\n", entry.name());
     if (entry.isDirectory()) {
-      sprintf(fileName, "%s/%06d.jpg", entry.name(), fileNumber);
+      genFileName(entry.name(), fileNumber, fileName);
       if (SD.exists(fileName)) {
         strlcpy(curFolder, entry.name(), 127);
         Serial.printf("Found new folder %s\n", curFolder);
         break;
-      }  
+      } else {
+        Serial.printf("File not found %s, moving on\n", entry.name());
+      }
     }
   }
 }
 void updateFolderFile() {
-  fileNumber += 1;
-  sprintf(fileName, "%s/%06d.jpg", curFolder, fileNumber);
+  fileNumber += FRAMES_DELTA;
+  genFileName(curFolder, fileNumber, fileName);
 
   if (!SD.exists(fileName)) {
     moveToNextFolder();
@@ -275,6 +341,10 @@ void setup()
   char logBuf[128];
 
   Serial.begin(115200);
+
+  // Track reboots
+  ++bootCount;
+  Serial.println("Boot number: " + String(bootCount));
 
   //--------------------------
   // Init SD card
@@ -297,10 +367,9 @@ void setup()
   bool rlst = SD.begin(SD_CS);
   if (!rlst) {
     Serial.println("SD init failed");
-    snprintf(logBuf, 128, "➸ No detected SdCard");
     lastError = SD_CARD_INIT_FAIL;
   } else {
-    snprintf(logBuf, 128, "➸ Detected SdCard insert:%.2f GB", SD.cardSize() / 1024.0 / 1024.0 / 1024.0);
+    Serial.printf("➸ Detected SdCard insert:%.2f GB\n", SD.cardSize() / 1024.0 / 1024.0 / 1024.0);
   }
 
   //--------------------------
@@ -337,21 +406,26 @@ void setup()
   ditherbuffer = (uint8_t *)heap_caps_malloc(EPD_WIDTH * EPD_HEIGHT / 2, MALLOC_CAP_SPIRAM);
   memset(ditherbuffer, 0xFF, EPD_WIDTH * EPD_HEIGHT / 2);
 
-  // Track reboots
-  ++bootCount;
-  Serial.println("Boot number: " + String(bootCount));
+  nframebuffer = (uint8_t *)heap_caps_malloc(EPD_WIDTH * EPD_HEIGHT / 2, MALLOC_CAP_SPIRAM);
+  memset(ditherbuffer, 0xFF, EPD_WIDTH * EPD_HEIGHT / 2);
 
   //--------------------------
-  // Calculate file name
+  // Draw to frame buffers
   //--------------------------
+  // First, draw last frame for erasing
+  genFileName(curFolder, fileNumber, fileName);
+  drawFile(fileName, nframebuffer);
+
+  // Now draw new frame
   updateFolderFile();
   if (fileNumber > 0) {
+    Serial.printf("Draw new %s\n", fileName);
     drawFile(fileName, framebuffer);
   } else {
     int cursor_x = 420;
     int cursor_y = 290;
     writeln((GFXfont *)&FiraSans, "The End", &cursor_x, &cursor_y, framebuffer);
-  }
+  }  
   
   sprintf(
     logBuf,
@@ -388,9 +462,19 @@ void setup()
   // Display low battery indicator if needed
   drawBattery(framebuffer, battery_voltage);
 
-  // Draw from frame buffer to display
-  drawSimple(framebuffer);
+  //--------------------------
+  // Draw from frame buffers to display
+  //--------------------------
+  Serial.println("Erase old");
+  drawNegative(nframebuffer);
+  delay(50);
 
+  Serial.println("Draw new");
+  draw02(framebuffer);
+
+  //------------------------------
+  // Go to sleep
+  //------------------------------
   // Turn off the power of the entire
   // POWER_EN control and also turn off the blue LED light
   epd_poweroff_all();
