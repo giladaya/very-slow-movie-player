@@ -51,8 +51,12 @@ RTC_DATA_ATTR int bootCount = 0;
 // Track which file to draw now
 RTC_DATA_ATTR int fileNumber = 0;
 RTC_DATA_ATTR char curFolder[128];
-char fileName[128];
+char frameFilePath[128];
 #define FRAMES_DELTA 1
+// How many frames to wait between saving file number
+#define SAVE_FILE_NUM_EVERY 50
+// Path of file to store current folder and frame number
+#define FOLDER_FILE "/__cur_folder.txt"
 
 // frame buffers
 uint8_t *_jpegDrawBuffer;
@@ -259,15 +263,58 @@ void drawBattery(uint8_t *framebuffer, float voltage) {
   }
 }
 
-void genFileName(const char* folder, const int fileNumber, char* fileName) {
-  sprintf(fileName, "%s/%06d.jpg", folder, fileNumber);
+void readFolderFile() {
+  myfile = SD.open(FOLDER_FILE);
+  if (myfile) {
+    int pos = 0;
+    uint8_t ch;
+    while (myfile.available()) {
+      ch = myfile.read();
+      if (ch == ',') {
+        break;
+      }
+      curFolder[pos++] = ch;
+    }
+
+    //https://stackoverflow.com/questions/42602481/how-do-i-write-integers-to-a-micro-sd-card-on-an-arduino
+    myfile.read((byte*)&fileNumber, sizeof(int)); // read 2 bytes
+    
+    myfile.close();
+    Serial.printf("Read folder from SD %s, %d\n", curFolder, fileNumber);
+  } else {
+    Serial.printf("Failed to open file %s\n", FOLDER_FILE);
+  }
+}
+
+void writeFolderFile() {
+  myfile = SD.open(FOLDER_FILE, FILE_WRITE);
+  if (myfile) {
+    // Folder name
+    myfile.print(curFolder);
+
+    // Delimiter
+    myfile.print(',');
+
+    // Frame number
+    myfile.write((byte*)&fileNumber, sizeof(int)); // write 2 bytes
+    
+    myfile.close();
+    Serial.printf("Saved folder name to SD: %s, %d\n", curFolder, fileNumber);
+  }
+  else {
+    Serial.printf("Failed to open file for write %s\n", FOLDER_FILE);
+  }
+}
+
+void genFilePath(const char* folder, const int fileNumber, char* frameFilePath) {
+  sprintf(frameFilePath, "%s/%06d.jpg", folder, fileNumber);
 }
 
 /*
  * Update the global file tracking variables:
  * curFolder
  * fileNumber
- * fileName
+ * frameFilePath
  */
 void moveToNextFolder() {
   Serial.println("Searching new folder");
@@ -281,14 +328,20 @@ void moveToNextFolder() {
   File entry;
   // Try to find File for curFolder
   Serial.printf("Moving to current folder %s\n", curFolder);
-  do {
+  while(true) {
     entry = dir.openNextFile();
-  } while (entry && ! (entry.isDirectory() && strcmp(entry.name(), curFolder)));
+    if (!entry || (entry.isDirectory() && strcmp(entry.name(), curFolder) == 0)) {
+      break;
+    }
+    // Serial.printf("Checked %s, is not %s\n", entry.name(), curFolder);
+  }
 
   if (!entry) {
     // current folder was not found, just rollback.
-    Serial.println("current folder was not found, just rollback");
+    Serial.println("current folder was not found, just rewind");
     dir.rewindDirectory();
+  } else {
+    Serial.printf("current folder found %s\n", entry.name());
   }
 
   // Now look for a folder with a file we can display
@@ -313,22 +366,24 @@ void moveToNextFolder() {
     // We are guaranteed to have entry here
     Serial.printf("Checking %s\n", entry.name());
     if (entry.isDirectory()) {
-      genFileName(entry.name(), fileNumber, fileName);
-      if (SD.exists(fileName)) {
+      genFilePath(entry.name(), fileNumber, frameFilePath);
+      if (SD.exists(frameFilePath)) {
         strlcpy(curFolder, entry.name(), 127);
         Serial.printf("Found new folder %s\n", curFolder);
+        // Persist new folder name to SD card
+        writeFolderFile();
         break;
       } else {
-        Serial.printf("File not found %s, moving on\n", entry.name());
+        Serial.printf("File not found %s, moving on\n", frameFilePath);
       }
     }
   }
 }
 void updateFolderFile() {
   fileNumber += FRAMES_DELTA;
-  genFileName(curFolder, fileNumber, fileName);
+  genFilePath(curFolder, fileNumber, frameFilePath);
 
-  if (!SD.exists(fileName)) {
+  if (!SD.exists(frameFilePath)) {
     moveToNextFolder();
   }
 }
@@ -338,9 +393,9 @@ void setup()
   // Measure wake time
   volatile uint32_t t1 = millis();
 
-  char logBuf[128];
-
   Serial.begin(115200);
+
+  char logBuf[128];
 
   // Track reboots
   ++bootCount;
@@ -370,6 +425,19 @@ void setup()
     lastError = SD_CARD_INIT_FAIL;
   } else {
     Serial.printf("➸ Detected SdCard insert:%.2f GB\n", SD.cardSize() / 1024.0 / 1024.0 / 1024.0);
+  }
+
+  
+  //--------------------------
+  // Read folder name from SD
+  //--------------------------
+  esp_sleep_wakeup_cause_t wakeup_reason;
+  wakeup_reason = esp_sleep_get_wakeup_cause();
+  Serial.printf("Wakeup reason %d\n", wakeup_reason);
+  if (wakeup_reason == 0) {
+    Serial.printf("Wakeup after reset\n");
+    // read folder from file
+    readFolderFile();
   }
 
   //--------------------------
@@ -413,24 +481,30 @@ void setup()
   // Draw to frame buffers
   //--------------------------
   // First, draw last frame for erasing
-  genFileName(curFolder, fileNumber, fileName);
-  drawFile(fileName, nframebuffer);
+  genFilePath(curFolder, fileNumber, frameFilePath);
+  drawFile(frameFilePath, nframebuffer);
 
   // Now draw new frame
   updateFolderFile();
   if (fileNumber > 0) {
-    Serial.printf("Draw new %s\n", fileName);
-    drawFile(fileName, framebuffer);
+    Serial.printf("Draw new %s\n", frameFilePath);
+    drawFile(frameFilePath, framebuffer);
   } else {
     int cursor_x = 420;
     int cursor_y = 290;
     writeln((GFXfont *)&FiraSans, "The End", &cursor_x, &cursor_y, framebuffer);
-  }  
+  }
+
+  // We persist file details to SD card every SAVE_FILE_NUM_EVERY frames
+  // To continue where we stopped in case of power loss
+  if (fileNumber % SAVE_FILE_NUM_EVERY == 0) {
+    writeFolderFile();
+  }
   
   sprintf(
     logBuf,
     "%s, b# %d, v: %.2f, Err: %d, %d",
-    fileName,
+    frameFilePath,
     bootCount,
     battery_voltage,
     lastError,
