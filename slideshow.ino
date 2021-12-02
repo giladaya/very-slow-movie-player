@@ -30,7 +30,7 @@
 #define BRIGHTNESS_TH 3.75
 
 #define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
-#define TIME_TO_SLEEP  150        /* Time ESP32 will go to sleep (in seconds) */
+#define TIME_TO_SLEEP  15        /* Time ESP32 will go to sleep (in seconds) */
 
 // Error codes returned by getLastError()
 enum {
@@ -388,45 +388,33 @@ void updateFolderFile() {
   }
 }
 
-void setup()
-{
+float readVoltage() {
+  // Correct the ADC reference voltage
+  esp_adc_cal_characteristics_t adc_chars;
+  esp_adc_cal_value_t val_type = esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_12, 1100, &adc_chars);
+  if (val_type == ESP_ADC_CAL_VAL_EFUSE_VREF) {
+    Serial.printf("eFuse Vref:%u mV", adc_chars.vref);
+    vref = adc_chars.vref;
+  }
+
+  uint16_t vRaw = analogRead(BATT_PIN);
+  float battery_voltage = ((float)vRaw / 4095.0) * 2.0 * 3.3 * (vref / 1000.0);
+
+  return battery_voltage;
+}
+
+void updateDisplay() {
   // Measure wake time
   volatile uint32_t t1 = millis();
 
-  Serial.begin(115200);
-
   char logBuf[128];
 
-  // Track reboots
-  ++bootCount;
-  Serial.println("Boot number: " + String(bootCount));
-
   //--------------------------
-  // Init SD card
+  // Read voltage
   //--------------------------
-  /*
-    SD Card test
-    Only as a test SdCard hardware, use example reference
-    https://github.com/espressif/arduino-esp32/tree/master/libraries/SD/examples
-  * * */
-
-  // Note:
-  // The order of the following lines is VERY important!
-  // 1. Init SPI
-  SPI.begin(SD_SCLK, SD_MISO, SD_MOSI);
-
-  // 2. Init EPD
-  epd_init();
-
-  // 3. Init SD card
-  bool rlst = SD.begin(SD_CS);
-  if (!rlst) {
-    Serial.println("SD init failed");
-    lastError = SD_CARD_INIT_FAIL;
-  } else {
-    Serial.printf("➸ Detected SdCard insert:%.2f GB\n", SD.cardSize() / 1024.0 / 1024.0 / 1024.0);
-  }
-
+  volatile float battery_voltage = readVoltage();  
+  String voltage = "➸ Voltage :" + String(battery_voltage) + "V";
+  Serial.println(voltage);
   
   //--------------------------
   // Read folder name from SD
@@ -439,26 +427,6 @@ void setup()
     // read folder from file
     readFolderFile();
   }
-
-  //--------------------------
-  // Read voltage
-  //--------------------------
-
-  // Correct the ADC reference voltage
-  esp_adc_cal_characteristics_t adc_chars;
-  esp_adc_cal_value_t val_type = esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_12, 1100, &adc_chars);
-  if (val_type == ESP_ADC_CAL_VAL_EFUSE_VREF) {
-    Serial.printf("eFuse Vref:%u mV", adc_chars.vref);
-    vref = adc_chars.vref;
-  }
-
-  // When reading the battery voltage, POWER_EN must be turned on
-  epd_poweron();
-
-  uint16_t vRaw = analogRead(BATT_PIN);
-  float battery_voltage = ((float)vRaw / 4095.0) * 2.0 * 3.3 * (vref / 1000.0);
-  String voltage = "➸ Voltage :" + String(battery_voltage) + "V";
-  Serial.println(voltage);
 
   //--------------------------
   // Init frame buffers
@@ -546,17 +514,57 @@ void setup()
   Serial.println("Draw new");
   draw02(framebuffer);
 
+  // Report awake time
+  volatile uint32_t t2 = millis();
+  Serial.printf("Update took %dms.\n", t2 - t1);
+}
+
+void setup()
+{
+  Serial.begin(115200);
+
+  // Track reboots
+  ++bootCount;
+  Serial.printf("****** Boot number %d ******\n", bootCount);
+
+  //--------------------------
+  // Init SD card
+  //--------------------------
+
+  // Note:
+  // The order of the following lines is VERY important!
+  
+  // 1. Init SPI
+  SPI.begin(SD_SCLK, SD_MISO, SD_MOSI);
+
+  // 2. Init EPD
+  epd_init();
+
+  // 3. Init SD card
+  bool rlst = SD.begin(SD_CS);
+  if (rlst) {
+    Serial.printf("➸ Detected SdCard insert:%.2f GB\n", SD.cardSize() / 1024.0 / 1024.0 / 1024.0);
+
+    //--------------------
+    // Draw new frame
+    //--------------------
+    
+    // When reading the battery voltage, POWER_EN must be turned on
+    epd_poweron();
+    
+    updateDisplay();
+  
+    // Turn off the power of the entire
+    // POWER_EN control and also turn off the blue LED light
+    epd_poweroff_all();  
+  } else {
+    Serial.println("SD init failed, restarting");
+    ESP.restart();
+  }
+
   //------------------------------
   // Go to sleep
   //------------------------------
-  // Turn off the power of the entire
-  // POWER_EN control and also turn off the blue LED light
-  epd_poweroff_all();
-
-  // Report awake time
-  volatile uint32_t t2 = millis();
-  Serial.printf("Was awake for %dms.\n", t2 - t1);
-
   esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
   Serial.println("Going to sleep now for " + String(TIME_TO_SLEEP) + " Seconds");
   Serial.flush();
