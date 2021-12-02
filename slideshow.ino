@@ -21,16 +21,10 @@
 #define SD_SCLK             14
 #define SD_CS               15
 
-//#define SHOW_LOG
-//#define SHOW_BARS
-
-// delay between contrast-enhancing re-draws of buffer
-#define REDRAW_DLAY 100
 // threshold of frame values average to consider a frame as dark
-#define BRIGHTNESS_TH 3.75
+#define BRIGHTNESS_TH 3.5
 
 #define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
-#define TIME_TO_SLEEP  15        /* Time ESP32 will go to sleep (in seconds) */
 
 // Error codes returned by getLastError()
 enum {
@@ -52,11 +46,52 @@ RTC_DATA_ATTR int bootCount = 0;
 RTC_DATA_ATTR int fileNumber = 0;
 RTC_DATA_ATTR char curFolder[128];
 char frameFilePath[128];
-#define FRAMES_DELTA 1
-// How many frames to wait between saving file number
-#define SAVE_FILE_NUM_EVERY 50
+
 // Path of file to store current folder and frame number
 #define FOLDER_FILE "/__cur_folder.txt"
+
+//--------------------
+// Config parameters
+//--------------------
+/*
+    Time ESP32 will go to sleep in seconds
+    (larger values - longer battery life)
+*/
+#define TIME_TO_SLEEP  15
+
+/*
+    How many frames to advance each update
+    Value is a matter of taste.
+    Lower means more uniform pictures,
+    higher gives more variance but some scenes may be missed
+*/
+#define FRAMES_DELTA 1
+
+/*
+   Whether to use high quality screen clearing.
+   False: some ghosting may show.
+   True: no ghosting but uses more power
+*/
+#define HQ_CLEAR true
+
+/*
+   Whether to use different draw logic for dark frames
+   False: dark frames look closer to the original but
+     details may not show as they are too dark
+   True: dark frames look better.
+*/
+#define DARK_FRAME_ENH true
+
+/*
+   How many frames to wait between saving current file number.
+   Lower values means less frames will repeat in case of reset
+   but more writes to the SD card.
+*/
+#define SAVE_FILE_NUM_EVERY 50   /* How many frames to wait between saving file number */
+
+//#define SHOW_LOG
+//#define SHOW_BARS
+
 
 // frame buffers
 uint8_t *_jpegDrawBuffer;
@@ -188,7 +223,23 @@ float calcPartialAvg(uint8_t *framebuffer, uint8_t margin) {
   return frameAverage;
 }
 
+void drawDark(uint8_t *framebuffer) {
+  Serial.println("Draw Dark");
+  
+  epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_WHITE);
+  delay(50);
+  
+  epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
+  
+  epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
+  epd_push_pixels(epd_full_screen(), 20, 0);
+  epd_push_pixels(epd_full_screen(), 20, 0);
+  delay(50);
+  epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_BLACK);
+}
+
 void drawSimple(uint8_t *framebuffer) {
+  Serial.println("Draw Simple");
   epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_WHITE);
   delay(50);
   epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
@@ -196,26 +247,29 @@ void drawSimple(uint8_t *framebuffer) {
 }
 
 void draw01(uint8_t *framebuffer) {
-//epd_clear();
+  Serial.println("Draw 01");
+  //epd_clear();
   epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_WHITE);
   delay(50);
   epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
   delay(50);
 
   //epd_push_pixels(epd_full_screen(), 5, 0);
-  
+
   epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_BLACK);
   //delay(50);
-  
+
   epd_push_pixels(epd_full_screen(), 20, 1);
   //delay(30);
-  
+
   epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
-  
+
   epd_push_pixels(epd_full_screen(), 2, 1);
 }
 
 void draw02(uint8_t *framebuffer) {
+  Serial.println("Draw 02");
+  
   epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_WHITE);
   delay(50);
   epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
@@ -223,21 +277,23 @@ void draw02(uint8_t *framebuffer) {
 
   epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_BLACK);
   delay(50);
-  
+
   epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
-  
+
   epd_push_pixels(epd_full_screen(), 2, 1);
 }
 
 void draw04(uint8_t *framebuffer) {
+  Serial.println("Draw 04");
+  
   epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_WHITE);
   delay(50);
-  
+
   epd_push_pixels(epd_full_screen(), 20, 0);
   delay(20);
   epd_push_pixels(epd_full_screen(), 20, 0);
   delay(20);
-  
+
   delay(150);
   epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_BLACK);
   //epd_push_pixels(epd_full_screen(), 10, 1);
@@ -246,6 +302,8 @@ void draw04(uint8_t *framebuffer) {
 
 // Used to erase previous frame before drawing a new frame
 void drawNegative(uint8_t *frameBuffer) {
+  Serial.println("Draw Negative");
+  
   epd_draw_image(epd_full_screen(), frameBuffer, WHITE_ON_WHITE);
   return;
   delay(50);
@@ -278,7 +336,7 @@ void readFolderFile() {
 
     //https://stackoverflow.com/questions/42602481/how-do-i-write-integers-to-a-micro-sd-card-on-an-arduino
     myfile.read((byte*)&fileNumber, sizeof(int)); // read 2 bytes
-    
+
     myfile.close();
     Serial.printf("Read folder from SD %s, %d\n", curFolder, fileNumber);
   } else {
@@ -297,7 +355,7 @@ void writeFolderFile() {
 
     // Frame number
     myfile.write((byte*)&fileNumber, sizeof(int)); // write 2 bytes
-    
+
     myfile.close();
     Serial.printf("Saved folder name to SD: %s, %d\n", curFolder, fileNumber);
   }
@@ -311,24 +369,24 @@ void genFilePath(const char* folder, const int fileNumber, char* frameFilePath) 
 }
 
 /*
- * Update the global file tracking variables:
- * curFolder
- * fileNumber
- * frameFilePath
- */
+   Update the global file tracking variables:
+   curFolder
+   fileNumber
+   frameFilePath
+*/
 void moveToNextFolder() {
   Serial.println("Searching new folder");
   // Reset file counter
   fileNumber = 1;
-  
+
   // Now need to find the next folder
   File dir = SD.open("/");
   dir.rewindDirectory();
-  
+
   File entry;
   // Try to find File for curFolder
   Serial.printf("Moving to current folder %s\n", curFolder);
-  while(true) {
+  while (true) {
     entry = dir.openNextFile();
     if (!entry || (entry.isDirectory() && strcmp(entry.name(), curFolder) == 0)) {
       break;
@@ -346,7 +404,7 @@ void moveToNextFolder() {
 
   // Now look for a folder with a file we can display
   bool looped = false;
-  
+
   while (true) {
     entry = dir.openNextFile();
     if (!entry) {
@@ -354,7 +412,7 @@ void moveToNextFolder() {
       if (!looped) {
         Serial.println("Rewind folder");
         dir.rewindDirectory();
-        looped = true;  
+        looped = true;
         continue;
       } else {
         // We already looped once, so nothing found - give up
@@ -379,8 +437,8 @@ void moveToNextFolder() {
     }
   }
 }
-void updateFolderFile() {
-  fileNumber += FRAMES_DELTA;
+void updateFolderFile(uint8_t delta) {
+  fileNumber += delta;
   genFilePath(curFolder, fileNumber, frameFilePath);
 
   if (!SD.exists(frameFilePath)) {
@@ -412,10 +470,10 @@ void updateDisplay() {
   //--------------------------
   // Read voltage
   //--------------------------
-  volatile float battery_voltage = readVoltage();  
+  volatile float battery_voltage = readVoltage();
   String voltage = "➸ Voltage :" + String(battery_voltage) + "V";
   Serial.println(voltage);
-  
+
   //--------------------------
   // Read folder name from SD
   //--------------------------
@@ -442,18 +500,22 @@ void updateDisplay() {
   ditherbuffer = (uint8_t *)heap_caps_malloc(EPD_WIDTH * EPD_HEIGHT / 2, MALLOC_CAP_SPIRAM);
   memset(ditherbuffer, 0xFF, EPD_WIDTH * EPD_HEIGHT / 2);
 
-  nframebuffer = (uint8_t *)heap_caps_malloc(EPD_WIDTH * EPD_HEIGHT / 2, MALLOC_CAP_SPIRAM);
-  memset(ditherbuffer, 0xFF, EPD_WIDTH * EPD_HEIGHT / 2);
+  if (HQ_CLEAR) {
+    nframebuffer = (uint8_t *)heap_caps_malloc(EPD_WIDTH * EPD_HEIGHT / 2, MALLOC_CAP_SPIRAM);
+    memset(ditherbuffer, 0xFF, EPD_WIDTH * EPD_HEIGHT / 2);
+  }
 
   //--------------------------
   // Draw to frame buffers
   //--------------------------
-  // First, draw last frame for erasing
-  genFilePath(curFolder, fileNumber, frameFilePath);
-  drawFile(frameFilePath, nframebuffer);
+  // First, draw last frame for erasing if needed
+  if (HQ_CLEAR) {
+    genFilePath(curFolder, fileNumber, frameFilePath);
+    drawFile(frameFilePath, nframebuffer);
+  }
 
   // Now draw new frame
-  updateFolderFile();
+  updateFolderFile(FRAMES_DELTA);
   if (fileNumber > 0) {
     Serial.printf("Draw new %s\n", frameFilePath);
     drawFile(frameFilePath, framebuffer);
@@ -468,7 +530,7 @@ void updateDisplay() {
   if (fileNumber % SAVE_FILE_NUM_EVERY == 0) {
     writeFolderFile();
   }
-  
+
   sprintf(
     logBuf,
     "%s, b# %d, v: %.2f, Err: %d, %d",
@@ -507,12 +569,24 @@ void updateDisplay() {
   //--------------------------
   // Draw from frame buffers to display
   //--------------------------
-  Serial.println("Erase old");
-  drawNegative(nframebuffer);
+  if (HQ_CLEAR) {
+    drawNegative(nframebuffer);
+  } else {
+    epd_clear();
+  }
+
   delay(50);
 
-  Serial.println("Draw new");
-  draw02(framebuffer);
+  if (DARK_FRAME_ENH) {
+    float average = calcPartialAvg(framebuffer, 50);
+    if (average < BRIGHTNESS_TH) {
+      drawDark(framebuffer);
+    } else {
+      draw02(framebuffer);
+    }
+  } else {
+    draw02(framebuffer);
+  }
 
   // Report awake time
   volatile uint32_t t2 = millis();
@@ -533,7 +607,7 @@ void setup()
 
   // Note:
   // The order of the following lines is VERY important!
-  
+
   // 1. Init SPI
   SPI.begin(SD_SCLK, SD_MISO, SD_MOSI);
 
@@ -548,15 +622,15 @@ void setup()
     //--------------------
     // Draw new frame
     //--------------------
-    
+
     // When reading the battery voltage, POWER_EN must be turned on
     epd_poweron();
-    
+
     updateDisplay();
-  
+
     // Turn off the power of the entire
     // POWER_EN control and also turn off the blue LED light
-    epd_poweroff_all();  
+    epd_poweroff_all();
   } else {
     Serial.println("SD init failed, restarting");
     ESP.restart();
