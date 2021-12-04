@@ -3,7 +3,7 @@
 #include <SD.h>
 
 // Path of file to store current folder and frame number
-#define FOLDER_FILE "/__cur_folder.txt"
+#define FOLDER_FILE "/__cur_folder_b.txt"
 
 namespace Filename
 {

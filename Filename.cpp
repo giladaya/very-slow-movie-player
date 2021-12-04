@@ -25,8 +25,16 @@ namespace Filename
         curFolder[pos++] = ch;
       }
 
+      char temp[16];
+      pos = 0;
+      while (myfile.available())
+      {
+        temp[pos++] = myfile.read();
+      }
+      fileNumber = atoi(temp);
+
       //https://stackoverflow.com/questions/42602481/how-do-i-write-integers-to-a-micro-sd-card-on-an-arduino
-      myfile.read((byte *)&fileNumber, sizeof(int)); // read 2 bytes
+      //myfile.read((byte *)&fileNumber, sizeof(int)); // read 2 bytes
 
       myfile.close();
       Serial.printf("Read folder from SD %s, %d\n", curFolder, fileNumber);
@@ -49,7 +57,8 @@ namespace Filename
       myfile.print(',');
 
       // Frame number
-      myfile.write((byte *)&fileNumber, sizeof(int)); // write 2 bytes
+      // myfile.write((byte *)&fileNumber, sizeof(int)); // write 2 bytes
+      myfile.print(fileNumber);
 
       myfile.close();
       Serial.printf("Saved folder name to SD: %s, %d\n", curFolder, fileNumber);
