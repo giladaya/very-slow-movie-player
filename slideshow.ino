@@ -19,7 +19,7 @@
 #define SD_CS               15
 
 // threshold of frame values average to consider a frame as dark
-#define BRIGHTNESS_TH 3.5
+#define BRIGHTNESS_TH 3.85
 
 #define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
 
@@ -33,7 +33,7 @@ RTC_DATA_ATTR int bootCount = 0;
     Time ESP32 will go to sleep in seconds
     (larger values - longer battery life)
 */
-#define TIME_TO_SLEEP  15
+#define TIME_TO_SLEEP 150
 
 /*
     How many frames to advance each update
@@ -48,7 +48,7 @@ RTC_DATA_ATTR int bootCount = 0;
    False: some ghosting may show.
    True: no ghosting but uses more power
 */
-#define HQ_CLEAR true
+#define HQ_CLEAR false //deprecated
 
 /*
    Whether to use different draw logic for dark frames
@@ -122,6 +122,7 @@ void updateDisplay() {
   }
 
   // Now draw new frame
+  Serial.println("Advancing frame");
   Filename::advance(FRAMES_DELTA);
   if (Filename::fileNumber > 0) {
     Serial.printf("Draw new %s\n", Filename::getPath());
@@ -175,23 +176,15 @@ void updateDisplay() {
   //--------------------------
   // Draw from frame buffers to display
   //--------------------------
-  if (HQ_CLEAR) {
-    DrawFuncs::drawNegative(nframebuffer);
-  } else {
-    epd_clear();
-  }
-
-  delay(50);
-
   if (DARK_FRAME_ENH) {
-    float average = MyUtils::calcPartialAvg(framebuffer, 50);
+    float average = MyUtils::calcPartialAvg(framebuffer, 20);
     if (average < BRIGHTNESS_TH) {
       DrawFuncs::drawDark(framebuffer);
     } else {
-      DrawFuncs::draw02(framebuffer);
+      DrawFuncs::drawLight(framebuffer);
     }
   } else {
-    DrawFuncs::draw02(framebuffer);
+    DrawFuncs::drawLight(framebuffer);
   }
 
   // Report awake time

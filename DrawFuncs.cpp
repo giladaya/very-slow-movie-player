@@ -2,86 +2,41 @@
 
 namespace DrawFuncs
 {
+  // Good for frame extracted with no processing
+  // Or very dark frames extracted with curves applied
   void drawDark(uint8_t *framebuffer)
   {
     Serial.println("Draw Dark");
 
+    epd_clear_area_cycles(epd_full_screen(), 2, 80);
+    delay(100);
+    
     epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_WHITE);
-    delay(50);
-
-    epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
-
-    epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
-    epd_push_pixels(epd_full_screen(), 20, 0);
-    epd_push_pixels(epd_full_screen(), 20, 0);
-    delay(50);
+    epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_WHITE);
     epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_BLACK);
-  }
-
-  void drawSimple(uint8_t *framebuffer)
-  {
-    Serial.println("Draw Simple");
-    epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_WHITE);
-    delay(50);
-    epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
-    delay(50);
-  }
-
-  void draw01(uint8_t *framebuffer)
-  {
-    Serial.println("Draw 01");
-    //epd_clear();
-    epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_WHITE);
-    delay(50);
-    epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
-    delay(50);
-
-    //epd_push_pixels(epd_full_screen(), 5, 0);
-
-    epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_BLACK);
+    
     //delay(50);
-
-    epd_push_pixels(epd_full_screen(), 20, 1);
-    //delay(30);
-
     epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
+    //epd_push_pixels(epd_full_screen(), 1, 1);
+    epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_BLACK);
 
-    epd_push_pixels(epd_full_screen(), 2, 1);
+    epd_push_pixels(epd_full_screen(), 5, 0);
   }
 
-  void draw02(uint8_t *framebuffer)
+  // Good for frames extracted with curves applied
+  void drawLight(uint8_t *framebuffer)
   {
-    Serial.println("Draw 02");
-
+    Serial.println("Draw Light");
+    epd_clear_area_cycles(epd_full_screen(), 2, 80);
+    delay(100);
+    
     epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_WHITE);
-    delay(50);
-    epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
-    delay(50);
-
-    epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_BLACK);
-    delay(50);
-
-    epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
-
-    epd_push_pixels(epd_full_screen(), 2, 1);
-  }
-
-  void draw04(uint8_t *framebuffer)
-  {
-    Serial.println("Draw 04");
-
     epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_WHITE);
-    delay(50);
-
-    epd_push_pixels(epd_full_screen(), 20, 0);
-    delay(20);
-    epd_push_pixels(epd_full_screen(), 20, 0);
-    delay(20);
-
-    delay(150);
     epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_BLACK);
-    //epd_push_pixels(epd_full_screen(), 10, 1);
+    
+    //delay(50);
     epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
+    //epd_push_pixels(epd_full_screen(), 1, 1);
   }
 
   // Used to erase previous frame before drawing a new frame
