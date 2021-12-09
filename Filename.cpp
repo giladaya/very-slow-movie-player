@@ -73,6 +73,7 @@ namespace Filename
     fileNumber += delta;
     genFilePath(curFolder, fileNumber, frameFilePath);
 
+    Serial.print("Check exist "); Serial.println(frameFilePath);
     if (!SD.exists(frameFilePath))
     {
       moveToNextFolder();
