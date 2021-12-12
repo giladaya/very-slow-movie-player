@@ -52,3 +52,12 @@ mkdir frames
 ```
 
 Note the use of curves filter for improved quality when displayed on the e-ink screen.
+
+## BOM (2021)
+- [LILYGO® TTGO T5-4.7](https://www.aliexpress.com/item/1005002006058892.html)
+- [SD card module](https://www.aliexpress.com/item/1005002317501092.html)
+- 3.7v Li-Po battery (the larger the better)
+- A picture frame
+- Some foam board for mounting the display in the picture frame  
+
+Total cost: about $65 
