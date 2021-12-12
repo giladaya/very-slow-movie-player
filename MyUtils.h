@@ -6,6 +6,7 @@
 namespace MyUtils
 {
   float calcPartialAvg(uint8_t *framebuffer, uint8_t margin);
+  float calcPartialDarkRatio(uint8_t *framebuffer, uint8_t margin);
   float readVoltage();
   void renderBattery(uint8_t *framebuffer, float voltage);
 

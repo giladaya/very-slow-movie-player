@@ -17,10 +17,11 @@ namespace DrawFuncs
     
     //delay(50);
     epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
+    epd_draw_image(epd_full_screen(), framebuffer, BLACK_ON_WHITE);
     //epd_push_pixels(epd_full_screen(), 1, 1);
     epd_draw_image(epd_full_screen(), framebuffer, WHITE_ON_BLACK);
 
-    epd_push_pixels(epd_full_screen(), 5, 0);
+    epd_push_pixels(epd_full_screen(), 3, 0);
   }
 
   // Good for frames extracted with curves applied

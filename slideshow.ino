@@ -19,7 +19,7 @@
 #define SD_CS               15
 
 // threshold of frame values average to consider a frame as dark
-#define BRIGHTNESS_TH 3.85
+#define DARK_PX_RATIO_TH 0.89
 
 #define uS_TO_S_FACTOR 1000000ULL  /* Conversion factor for micro seconds to seconds */
 
@@ -177,8 +177,9 @@ void updateDisplay() {
   // Draw from frame buffers to display
   //--------------------------
   if (DARK_FRAME_ENH) {
-    float average = MyUtils::calcPartialAvg(framebuffer, 20);
-    if (average < BRIGHTNESS_TH) {
+    float dRatio = MyUtils::calcPartialDarkRatio(framebuffer, 20);
+    
+    if (dRatio > DARK_PX_RATIO_TH) {
       DrawFuncs::drawDark(framebuffer);
     } else {
       DrawFuncs::drawLight(framebuffer);
