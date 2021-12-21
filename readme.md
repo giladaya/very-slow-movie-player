@@ -1,8 +1,8 @@
-# Lilygo Slideshow
+# Very Slow Movie Player
 
-Inspired by [this article](https://debugger.medium.com/how-to-build-a-very-slow-movie-player-in-2020-c5745052e4e4).  
-Uses the LILYGO® TTGO T5-4.7 Inch E-paper ESP32 dev board.  
-You'll want to add the SD-card module from Lilygo to store all them frames.
+I was inspired by [this article](https://debugger.medium.com/how-to-build-a-very-slow-movie-player-in-2020-c5745052e4e4) but was put off by the cost.  
+Eventually found the LILYGO® TTGO T5-4.7 Inch E-paper ESP32 dev board which was cheap and easy to use, but required settling on a smaller display.  
+This repo includes the arduino sketch with some supporting info for making your own.  
 
 ![Photo1](photos/front.jpg)
 See photos folder for more photos.
@@ -61,7 +61,8 @@ $ mogrify -colorspace Gray -quality 90 frames/*.jpg
 Note the use of curves filter for improved quality when displayed on the e-ink screen.
 
 In the `scripts` folder there are a couple of bash scripts that in addition to extracting the images can also remove blank frames.
-You can use them like so:  
+You can use them like so:
+
 ```bash
 $ scripts/01_extract.sh video.file.name.mp4 00:24 02:01:07
 $ scripts/02_clean.sh
