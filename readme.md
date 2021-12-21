@@ -41,7 +41,7 @@ The files have to be named sequentially with no gaps and use 6 digits, zero-padd
 
 The JPEG decoder expects a grayscale color space and _no progressive_ encoding.
 
-These commands worked for me on a Linux system, using `ffmpeg` and `imagemagick`:
+These commands worked for me on a Linux system, using `ffmpeg` (version 4.2.4) and `imagemagick` (version 6.9.10):
 
 ```bash
 # In the directory that contains the video file
@@ -51,20 +51,29 @@ mkdir frames
 # - Extract frames as files with proper names
 # - Scale and crop to 960x540 pixels
 # - Apply curves adjustment
-> ffmpeg -ss 00:24 -to 02:01:07 -i video.file.name.mp4 -vf "scale=-2:540,crop=960:540,eq=saturation=0,lutrgb='r=clipval:g=clipval:b=clipval',curves=all='0/0 0.06/0.23 0.13/0.41 0.200/0.55 0.37/0.70 0.63/0.84 1/1'" -r 1 -qscale:v 2 frames/%06d.jpg
+$ ffmpeg -ss 00:24 -to 02:01:07 -i video.file.name.mp4 -vf "scale=-2:540,crop=960:540,eq=saturation=0,lutrgb='r=clipval:g=clipval:b=clipval',curves=all='0/0 0.06/0.23 0.13/0.41 0.200/0.55 0.37/0.70 0.63/0.84 1/1'" -r 1 -qscale:v 2 frames/%06d.jpg
 
 # Use mogrify from imagemagick
 # to apply a grayscale colorspace for the frames
-> mogrify -colorspace Gray -quality 90 frames/*.jpg
+$ mogrify -colorspace Gray -quality 90 frames/*.jpg
 ```
 
 Note the use of curves filter for improved quality when displayed on the e-ink screen.
 
+In the `scripts` folder there are a couple of bash scripts that in addition to extracting the images can also remove blank frames.
+You can use them like so:  
+```bash
+$ scripts/01_extract.sh video.file.name.mp4 00:24 02:01:07
+$ scripts/02_clean.sh
+$ scripts/03_resequence.sh
+```
+
 ## BOM (2021)
+
 - [LILYGO® TTGO T5-4.7](https://www.aliexpress.com/item/1005002006058892.html)
 - [SD card module](https://www.aliexpress.com/item/1005002317501092.html)
 - 3.7v Li-Po battery (the larger the better), [example](https://www.aliexpress.com/item/4001116123943.html)
 - A picture frame
-- Some foam board for mounting the display in the picture frame  
+- Some foam board for mounting the display in the picture frame
 
-Total cost: about $65 
+Total cost: about $65
