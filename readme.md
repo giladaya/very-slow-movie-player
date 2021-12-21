@@ -2,18 +2,25 @@
 
 Inspired by [this article](https://debugger.medium.com/how-to-build-a-very-slow-movie-player-in-2020-c5745052e4e4).  
 Uses the LILYGO® TTGO T5-4.7 Inch E-paper ESP32 dev board.  
-You'll want to add the SD-crd module to store all them frames.
+You'll want to add the SD-card module from Lilygo to store all them frames.
+
+![Photo1](photos/front.jpg)
+See photos folder for more photos.
 
 ## Features
 
 - Long battery life  
-  Using deep sleep for efficient power use (actual battery life depends on the battery used)
-- Playlist support  
-  Prepare a card with multiple movies by putting each one in a separate folder. They will be played by order one after the other
-- Save position  
+  Uses deep sleep for efficient power use (actual battery life depends on the battery used)
+- Resilient  
   The displayed frame position is saved to the SD card from time to time so playback can continue where it stopped after a reset or power loss
 - Adaptive drawing  
-  Use special logic for dark frame to improve their display
+  A special drawing procedure is used for dark frames for improved visual quality
+- Self contained  
+  Does not require a network connection or running a server
+- Large capacity  
+  Can hold hundreds of thousends of pictures (depending on the capacity of SD card used)
+- Playlist support  
+  Prepare a card with multiple movies by putting each one in a separate folder. They will be played by order one after the other
 
 ## Using
 
@@ -56,7 +63,7 @@ Note the use of curves filter for improved quality when displayed on the e-ink s
 ## BOM (2021)
 - [LILYGO® TTGO T5-4.7](https://www.aliexpress.com/item/1005002006058892.html)
 - [SD card module](https://www.aliexpress.com/item/1005002317501092.html)
-- 3.7v Li-Po battery (the larger the better)
+- 3.7v Li-Po battery (the larger the better), [example](https://www.aliexpress.com/item/4001116123943.html)
 - A picture frame
 - Some foam board for mounting the display in the picture frame  
 
