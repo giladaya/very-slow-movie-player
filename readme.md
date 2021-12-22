@@ -2,7 +2,7 @@
 
 I was inspired by [this article](https://debugger.medium.com/how-to-build-a-very-slow-movie-player-in-2020-c5745052e4e4) but was put off by the cost.  
 Eventually found the LILYGO® TTGO T5-4.7 Inch E-paper ESP32 dev board which was cheap and easy to use, but required settling on a smaller display.  
-This repo includes the arduino sketch with some supporting info for making your own.  
+This repo includes the arduino sketch with some supporting info for making your own.
 
 ![Photo1](photos/front.jpg)
 See photos folder for more photos.
@@ -25,13 +25,14 @@ See photos folder for more photos.
 ## Using
 
 1. Setup your machine for development - see the instructions from [here](https://github.com/Xinyuan-LilyGO/LilyGo-EPD47)
-2. Adjust the configuration parameters at the top of the sketch file to your liking
-3. Upload the sketch to the board
-4. Prepare an SD card with the desired movies - see instructions below
-5. Insert the SD card to the built-in reader
-6. Connect a battery
-7. Very slow playback of the movies will start
-8. Put it somewhere nice and enjoy
+2. Install [JPEGDEC library](https://github.com/bitbank2/JPEGDEC)
+3. Adjust the configuration parameters at the top of the sketch file to your liking
+4. Upload the sketch to the board
+5. Prepare an SD card with the desired movies - see instructions below
+6. Insert the SD card to the built-in reader
+7. Connect a battery
+8. Very slow playback of the movies will start
+9. Put it somewhere nice and enjoy
 
 ## Generating the images
 
