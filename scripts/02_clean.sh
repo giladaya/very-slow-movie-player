@@ -7,6 +7,7 @@
 # ./02_clean.sh
 
 # fraction between 0 and 1
+THRESH_DETAILS=0.02
 THRESH_LOW=0.0002
 THRESH_HIGH=0.9999
 
@@ -16,7 +17,7 @@ echo "Remove empty frames"
 for image_file in __frames_raw/*.jpg
 do
   std=`convert $image_file -format "%[fx:standard_deviation]" info:`
-  stdt=`convert $image_file -format "%[fx:standard_deviation<$THRESH_LOW?1:0]" info:`
+  stdt=`convert $image_file -format "%[fx:standard_deviation<$THRESH_DETAILS?1:0]" info:`
   # echo "Image $image_file STD $std $stdt"
 
   if [ $stdt -eq 1 ]; then
