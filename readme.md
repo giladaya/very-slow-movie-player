@@ -79,3 +79,9 @@ $ scripts/03_resequence.sh
 - Some foam board for mounting the display in the picture frame
 
 Total cost: about $65
+
+## Battery life
+With a 6Ah battery and 150 seconds between frame changes:
+- 19.5 days to "battery low" indicator
+- 20.5 days to battery dead
+- 7 hours charging to a full battery
