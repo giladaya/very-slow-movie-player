@@ -1,7 +1,7 @@
 # Very Slow Movie Player
 
-I was inspired by [this article](https://debugger.medium.com/how-to-build-a-very-slow-movie-player-in-2020-c5745052e4e4) but was put off by the cost.  
-Eventually found the LILYGO® TTGO T5-4.7 Inch E-paper ESP32 dev board which was cheap and easy to use, but required settling on a smaller display.  
+I was inspired by [this article](https://debugger.medium.com/how-to-build-a-very-slow-movie-player-in-2020-c5745052e4e4) which was inspired by [that article](https://medium.com/s/story/very-slow-movie-player-499f76c48b62) to build a VSMP.   However, I was put off by the cost of the hardware used in the original designs.  
+Eventually found the LILYGO® TTGO T5-4.7 Inch E-paper ESP32 dev board which was cheap and easy to use, at the cost of settling for a smaller display.  
 This repo includes the arduino sketch with some supporting info for making your own.
 
 ![Photo1](photos/front.jpg)
@@ -85,3 +85,7 @@ With a 6Ah battery and 150 seconds between frame changes:
 - 19.5 days to "battery low" indicator
 - 20.5 days to battery dead
 - 7 hours charging to a full battery
+
+## Future plans
+Make it work with a bigger screen!  
+There are available unexpensive displays that could be used (EG ED060XC3), but I still don't know how to drive them with available hardware.
