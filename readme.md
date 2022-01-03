@@ -36,6 +36,21 @@ See photos folder for more photos.
 
 ## Generating the images
 
+### TL;DR
+In the `scripts` folder there are a couple of bash scripts that:
+- Extract frames from video
+- Apply color corrections
+- Remove blank frames  
+
+You can use them like so:
+
+```bash
+$ scripts/01_extract.sh video.file.name.mp4 00:24 02:01:07
+$ scripts/02_clean.sh
+$ scripts/03_resequence.sh
+```
+
+### More details
 The firmware looks for frames named with a specific pattern, in folders under the root of the SD card file system.  
 For example: `/movie_a/000001.jpg`, `/movie_a/000002.jpg`, `/movie_a/000003.jpg` etc.  
 The files have to be named sequentially with no gaps and use 6 digits, zero-padded numbers.
@@ -60,15 +75,6 @@ $ mogrify -colorspace Gray -quality 90 frames/*.jpg
 ```
 
 Note the use of curves filter for improved quality when displayed on the e-ink screen.
-
-In the `scripts` folder there are a couple of bash scripts that in addition to extracting the images can also remove blank frames.
-You can use them like so:
-
-```bash
-$ scripts/01_extract.sh video.file.name.mp4 00:24 02:01:07
-$ scripts/02_clean.sh
-$ scripts/03_resequence.sh
-```
 
 ## BOM (2021)
 
