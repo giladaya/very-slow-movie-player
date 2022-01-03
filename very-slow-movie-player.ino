@@ -33,7 +33,7 @@ RTC_DATA_ATTR int bootCount = 0;
     Time ESP32 will go to sleep in seconds
     (larger values - longer battery life)
 */
-#define TIME_TO_SLEEP 150
+#define TIME_TO_SLEEP 300
 
 /*
     How many frames to advance each update
